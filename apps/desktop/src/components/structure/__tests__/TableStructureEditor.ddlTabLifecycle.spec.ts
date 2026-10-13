@@ -411,7 +411,8 @@ describe("TableStructureEditor DDL tab lifecycle", () => {
 
     const refreshButton = () => buttonWithText(root, "structureEditor.refresh");
     await vi.waitFor(() => expect(refreshButton().disabled).toBe(true));
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "F5", bubbles: true, cancelable: true }));
+    // F5 originates inside the editor (bubbles up to the window-level listener).
+    refreshButton().dispatchEvent(new KeyboardEvent("keydown", { key: "F5", bubbles: true, cancelable: true }));
     expect(mocks.loadObjectDdl).toHaveBeenCalledTimes(1);
     expect(mocks.invalidateObjectDdl).not.toHaveBeenCalled();
 
@@ -443,11 +444,41 @@ describe("TableStructureEditor DDL tab lifecycle", () => {
 
       tableComment = "Updated comment";
       mocks.loadObjectDdl.mockResolvedValue({ ddl: "CREATE TABLE users (id bigint, name text);", cacheStatus: "remote" });
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "F5", bubbles: true, cancelable: true }));
+      refreshButton().dispatchEvent(new KeyboardEvent("keydown", { key: "F5", bubbles: true, cancelable: true }));
       await vi.waitFor(() => expect(commentInput()?.value).toBe("Updated comment"));
       expect(mocks.invalidateObjectDdl).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener("keydown", blockBrowserReload, true);
+    }
+  });
+
+  it("ignores F5 dispatched from outside the editor root", async () => {
+    // The keydown listener is window-level and shared by every activated structure
+    // editor; an F5 typed in another editor group (e.g. the global refresh-data
+    // shortcut) must not discard this editor's drafts.
+    mocks.loadObjectDdl.mockResolvedValue({ ddl: DDL, cacheStatus: "remote" });
+    const root = document.createElement("div");
+    document.body.append(root);
+    app = createApp(TableStructureEditor, {
+      connectionId: mocks.connection.id,
+      database: "test",
+      schema: "public",
+      tableName: "users",
+      initialTab: "ddl",
+    });
+    app.mount(root);
+
+    await vi.waitFor(() => expect(mocks.loadObjectDdl).toHaveBeenCalledTimes(1));
+    const outside = document.createElement("input");
+    document.body.append(outside);
+    try {
+      outside.dispatchEvent(new KeyboardEvent("keydown", { key: "F5", bubbles: true, cancelable: true }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "F5", bubbles: true, cancelable: true }));
+      await nextTick();
+      expect(mocks.invalidateObjectDdl).not.toHaveBeenCalled();
+      expect(mocks.loadObjectDdl).toHaveBeenCalledTimes(1);
+    } finally {
+      outside.remove();
     }
   });
 

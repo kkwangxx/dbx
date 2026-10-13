@@ -5218,8 +5218,13 @@ function onStructureEditorKeydown(event: KeyboardEvent) {
   // Desktop blocks F5 before this bubble listener and marks it defaultPrevented.
   // Handle the shortcut first so that guard still refreshes the open table (#11850).
   if (isPlainStructureRefreshShortcut(event)) {
+    // Only react when the keypress originates inside this editor: the listener is
+    // window-level and every activated structure editor registers one, so without
+    // this check a plain F5 typed into another editor group (where F5 is the global
+    // refresh-data shortcut) would silently discard THIS editor's unsaved drafts.
     const target = event.target;
-    if (target instanceof Element && target.closest('[role="dialog"], [role="alertdialog"]')) return;
+    if (!(target instanceof Element) || !rootRef.value?.contains(target)) return;
+    if (target.closest('[role="dialog"], [role="alertdialog"]')) return;
     if (isCreateMode.value) return;
     event.preventDefault();
     event.stopPropagation();
